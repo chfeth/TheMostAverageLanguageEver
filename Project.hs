@@ -6,73 +6,89 @@
 
 module Project where
 
-import <prelude> hiding (num)
+import Prelude hiding (num)
 
--- Grammar for TheMostAverageLanguageEver
--- num ::= (any integer) 
--- var ::= (any variable name)
--- def ::= varName '=' [Int or Bool]
---       | functionName [Expr] [Expr]
+type Prog = [Cmd]
 
--- Expr ::= num
---		  | bool
---        | 'add' expr expr
---        | `mul` expr expr                  
---        | `equ` expr expr  
---		  | 'Let' def '=' expr 'in' expr
---		  | 'Ref' def                    
---        | `if` def `else` def `end` 
-
--- Now we encode the above grammar as a set of Haskell data types
-
-type Num = Int
 type Var = String
-type FunctionName = String
 
-type Prog = [Expr]
-
-data Def = Variable Var [Either Int Bool]
-         | Function FunctionName [Expr] [Expr]
-       deriving (Eq, Show)
-
-data Expr = Lit Num
-          | B Bool
-          | Add Expr Expr
-          | Mul Expr Expr 
-          | Equ Expr Expr
-          | Let Var Expr Expr
-          | Ref Var 
-          | IfThen Prog Prog
-       deriving (Eq, Show)
-
-data Stmt = Set Expr
-          | While Expr Stmt
-          | Begin [Stmt]
-       deriving (Eq, Show)
-
--- Good Programs ------------------------------------
-
--- Ex 1 Concrete Syntax
--- [Function goodFunction [Lit 5, ] []]
--- Ex 2 Concrete Syntax
-
--- Bad Programs -------------------------------------
+data Cmd = PushN Int
+         | PushB Bool
+         | Rot
+         | Drop
+         | Dup
+         | Swap
+         | Over
+         | Add
+         | Mul
+         | Equ
+         | Let Var Cmd Cmd
+         | Ref Var
+         | IfThen Prog Prog
+   deriving (Eq, Show)
 
 
+type Stack = [Either NumT Prog]
 
------------------------------------------------------
--- type Envr = Var -> Maybe Expr
+type NumT = Either Int Bool
 
--- empty :: Env
--- empty = \_ -> Nothing
+type Domain = Stack -> Maybe Stack
 
--- get :: Var -> Env -> Maybe Expr
+cmd :: Cmd -> Env -> Domain
+cmd (PushN i) _ s = Just (Left (Left i) : s)
+cmd (PushB b) _ s = Just (Left (Right b) : s)
+cmd (Rot) _ s     = case s of 
+                        (x1 : x2 : x3 : xs) -> Just (x3 : x2 : x1 : xs)
+                        _        -> Nothing
+cmd (Drop) _ s    = case s of 
+                        (x : xs) -> Just xs
+                        _        -> Nothing
+cmd (Dup) _ s     = case s of 
+                        (x : xs) -> Just (x : x : xs)
+                        _        -> Nothing
+cmd (Swap) _ s    = case s of 
+                        (x1 : x2 : xs) -> Just (x2 : x1 : xs)
+                        _              -> Nothing
+cmd (Over) _ s    = case s of 
+                        (x1 : x2 : xs) -> Just (x2 : x1 : x2 : xs)
+                        _              -> Nothing
+cmd Add _ s       = case s of 
+                        (Left(Left  i) : Left(Left j) : s') -> Just (Left(Left (i + j)) : s')
+                        _                                   -> Nothing
+cmd Mul e s       = case s of 
+                        (Left(Left i) : Left(Left j) : s') -> Just (Left(Left (i * j)) : s')
+                        _                                  -> Nothing
+cmd Equ e s       = case s of 
+                        (Left(Left i) : Left(Left j) : s')   -> Just (Left(Right (i == j)) : s')
+                        (Left(Right k) : Left(Right l) : s') -> Just (Left(Right (k == l)) : s')
+                        _                                    -> Nothing
+cmd (IfThen t v ) env s  = case s of 
+                                 (Left(Right True) : s')  -> prog t env s'
+                                 (Left(Right False) : s') -> prog v env s'
+                                 _                        -> Nothing
+cmd (Let x b v) env s    = case cmd b env s of 
+                                 Just (Left (Left i) : s') -> cmd v (set x i env) s'
+                                 Nothing                   -> Nothing
+cmd (Ref x) env s        = case get x env of
+                                 Just i -> Just (Left (Left i) : s)
+                                 _      -> Nothing
 
--- set :: Var -> Expr -> Env -> Env
+prog :: Prog -> Env -> Domain
+prog [] e s   = Just s
+prog (c:p) e s = case cmd c e s of 
+                            Just s' -> prog p e s'
+                            _       -> Nothing
 
--- expr :: Expr -> Env -> 
 
+type Env = Var -> Maybe Int
 
+empty :: Env
+empty = \_ -> Nothing
 
+get :: Var -> Env -> Maybe Int
+get x m = m x
+
+set :: Var -> Int -> Env -> Env
+set x i m y = if y == x then Just i else m y -- instead of m y could be get y m
 
 

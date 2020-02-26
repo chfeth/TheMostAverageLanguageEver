@@ -14,6 +14,7 @@ type Var = String
 
 data Cmd = PushN Int
          | PushB Bool
+         | PushS String
          | Rot
          | Drop
          | Dup
@@ -27,16 +28,28 @@ data Cmd = PushN Int
          | IfThen Prog Prog
    deriving (Eq, Show)
 
+data Stmt
+         = Set Cmd
+         | While Test Stmt
+         | Begin [Stmt]
+  deriving (Eq,Show)
 
-type Stack = [Either NumT Prog]
+data Type
+         = I Int
+         | B Bool
+         | S String
+         | P Prog
+         | Error
+   deriving (Eq, Show)
 
-type NumT = Either Int Bool
+type Stack = [Type]
 
 type Domain = Stack -> Maybe Stack
 
 cmd :: Cmd -> Env -> Domain
-cmd (PushN i) _ s = Just (Left (Left i) : s)
-cmd (PushB b) _ s = Just (Left (Right b) : s)
+cmd (PushN i) _ s = Just ((I i) : s)
+cmd (PushB b) _ s = Just ((B b) : s)
+cmd (PushS str) _ s = Just ((S str) : s)
 cmd (Rot) _ s     = case s of 
                         (x1 : x2 : x3 : xs) -> Just (x3 : x2 : x1 : xs)
                         _        -> Nothing
@@ -53,24 +66,24 @@ cmd (Over) _ s    = case s of
                         (x1 : x2 : xs) -> Just (x2 : x1 : x2 : xs)
                         _              -> Nothing
 cmd Add _ s       = case s of 
-                        (Left(Left  i) : Left(Left j) : s') -> Just (Left(Left (i + j)) : s')
+                        ((I i) : (I j) : s') -> Just ((I (i + j)) : s')
                         _                                   -> Nothing
 cmd Mul e s       = case s of 
-                        (Left(Left i) : Left(Left j) : s') -> Just (Left(Left (i * j)) : s')
+                        ((I i) : (I j) : s') -> Just ((I (i * j)) : s')
                         _                                  -> Nothing
 cmd Equ e s       = case s of 
-                        (Left(Left i) : Left(Left j) : s')   -> Just (Left(Right (i == j)) : s')
-                        (Left(Right k) : Left(Right l) : s') -> Just (Left(Right (k == l)) : s')
+                        ((I i) : (I j) : s')   -> Just ((B (i == j)) : s')
+                        ((B k) : (B l) : s') -> Just ((B (k == l)) : s')
                         _                                    -> Nothing
 cmd (IfThen t v ) env s  = case s of 
-                                 (Left(Right True) : s')  -> prog t env s'
-                                 (Left(Right False) : s') -> prog v env s'
+                                 ((B True) : s')  -> prog t env s'
+                                 ((B False) : s') -> prog v env s'
                                  _                        -> Nothing
 cmd (Let x b v) env s    = case cmd b env s of 
-                                 Just (Left (Left i) : s') -> cmd v (set x i env) s'
+                                 Just (i : s') -> cmd v (set x i env) s'
                                  Nothing                   -> Nothing
 cmd (Ref x) env s        = case get x env of
-                                 Just i -> Just (Left (Left i) : s)
+                                 Just i -> Just (i : s)
                                  _      -> Nothing
 
 prog :: Prog -> Env -> Domain
@@ -80,15 +93,22 @@ prog (c:p) e s = case cmd c e s of
                             _       -> Nothing
 
 
-type Env = Var -> Maybe Int
+type Env = Var -> Maybe Type
 
 empty :: Env
 empty = \_ -> Nothing
 
-get :: Var -> Env -> Maybe Int
+get :: Var -> Env -> Maybe Type
 get x m = m x
 
-set :: Var -> Int -> Env -> Env
+set :: Var -> Type -> Env -> Env
 set x i m y = if y == x then Just i else m y -- instead of m y could be get y m
 
+stmt :: Stmt -> Type -> Domain
+stmt (Set e)    t s = cmd e s
+stmt (While c b) t s = if test c s then stmt (While c b) (stmt b s) else s
+stmt (Begin ss) t s = stmts ss s  -- foldl (flip stmt) s ss
+  where
+    stmts []     r = r
+    stmts (s:ss) r = stmts ss (stmt s r)
 

@@ -8,6 +8,8 @@ module Project where
 
 import Prelude hiding (num)
 
+prelude = undefined --library-level functions to be implemented after milestone (after refactoring/input/output/first-class functions are implemented)
+
 type Prog = [Cmd]
 
 type Var = String
@@ -21,16 +23,20 @@ data Cmd = PushN Int
          | Swap
          | Over
          | Add
+         | Sub
          | Mul
          | Equ
-         | Let Var Cmd Cmd
+         | LTE Cmd
+         | GTE Cmd
+         | Let Var Prog Prog
          | Ref Var
          | IfThen Prog Prog
+         | WhileLp Stmt
    deriving (Eq, Show)
 
 data Stmt
          = Set Cmd
-         | While Test Stmt
+         | While Cmd Stmt
          | Begin [Stmt]
   deriving (Eq,Show)
 
@@ -65,8 +71,17 @@ cmd (Swap) _ s    = case s of
 cmd (Over) _ s    = case s of 
                         (x1 : x2 : xs) -> Just (x2 : x1 : x2 : xs)
                         _              -> Nothing
+cmd (LTE x) e s   = case cmd x e s of
+                        Just ((I x1) : (I x2) : xs) -> Just ((B (x2 <= x1)) : (I x2) : xs)
+                        _  -> Nothing
+cmd (GTE x) e s   = case cmd x e s of
+                        Just ((I x1) : (I x2) : xs) -> Just ((B (x1 <= x2)) : (I x2) : xs)
+                        _  -> Nothing
 cmd Add _ s       = case s of 
                         ((I i) : (I j) : s') -> Just ((I (i + j)) : s')
+                        _                                   -> Nothing
+cmd Sub _ s       = case s of 
+                        ((I i) : (I j) : s') -> Just ((I (j - i)) : s')
                         _                                   -> Nothing
 cmd Mul e s       = case s of 
                         ((I i) : (I j) : s') -> Just ((I (i * j)) : s')
@@ -79,12 +94,13 @@ cmd (IfThen t v ) env s  = case s of
                                  ((B True) : s')  -> prog t env s'
                                  ((B False) : s') -> prog v env s'
                                  _                        -> Nothing
-cmd (Let x b v) env s    = case cmd b env s of 
-                                 Just (i : s') -> cmd v (set x i env) s'
+cmd (Let x b v) env s    = case prog b env s of 
+                                 Just (i : s') -> prog v (set x i env) s'
                                  Nothing                   -> Nothing
 cmd (Ref x) env s        = case get x env of
                                  Just i -> Just (i : s)
                                  _      -> Nothing
+cmd (WhileLp x) env s      = stmt x s
 
 prog :: Prog -> Env -> Domain
 prog [] e s   = Just s
@@ -104,11 +120,40 @@ get x m = m x
 set :: Var -> Type -> Env -> Env
 set x i m y = if y == x then Just i else m y -- instead of m y could be get y m
 
-stmt :: Stmt -> Type -> Domain
-stmt (Set e)    t s = cmd e s
-stmt (While c b) t s = if test c s then stmt (While c b) (stmt b s) else s
-stmt (Begin ss) t s = stmts ss s  -- foldl (flip stmt) s ss
-  where
-    stmts []     r = r
-    stmts (s:ss) r = stmts ss (stmt s r)
+stmt :: Stmt -> Domain
+stmt (Set e)     s = cmd e empty s
+stmt (While c b)  s = case cmd c empty s of
+                           Just ((B True) : s') -> case (stmt b s') of 
+                                                      Just t -> stmt (While c b) t
+                                                      _      -> Just s
+                           Just ((B False) : s') -> Just s
+                           _                     -> Nothing
+stmt (Begin ss)  s = stmts ss s
+
+stmts :: [Stmt] -> Domain
+stmts [] s = Just s
+stmts (x : xs) s = case stmt x s of
+                         Just t -> stmts xs t
+                         _      -> Nothing
+
+
+nott :: Cmd
+nott = IfThen [PushB False] [PushB True]
+
+
+
+--EXAMPLE OF GOOD PROGRAMS
+
+goodExample1 :: Prog
+goodExample1 = [(WhileLp (Begin [Set (PushN 1900),While (GTE (PushN 10)) (Begin [(Set (PushN 400)), (Set (Sub))])])), PushN 0, Equ, (IfThen [PushS "Leap Year"] [PushS "Non-Leap Year"])]
+-- THE ABOVE CHECKS WHETHER A GIVEN YEAR IS A LEAP YEAR. REPLACE "1900" WITH THE YEAR YOU WANT TO CHECK
+
+
+--EXAMPLE OF BAD PROGRAMS
+badExample1 :: Prog
+badExample1 = [(PushS "test"), (PushN 5), Add]
+
+badExample2 :: Prog
+badExample2 = [PushN 5, Add]
+
 

@@ -10,13 +10,12 @@ import Prelude hiding (num)
 
 prelude = undefined --library-level functions to be implemented after milestone (after refactoring/input/output/first-class functions are implemented)
 
+--ABSTRACT SYNTAX----------------------
 type Prog = [Cmd]
 
 type Var = String
 
-data Cmd = PushN Int
-         | PushB Bool
-         | PushS String
+data Cmd = PushT Type
          | Rot
          | Drop
          | Dup
@@ -45,17 +44,22 @@ data Type
          | B Bool
          | S String
          | P Prog
-         | Error
    deriving (Eq, Show)
+
+-----------------------------------------
 
 type Stack = [Type]
 
 type Domain = Stack -> Maybe Stack
 
+
+--SEMANTICS
 cmd :: Cmd -> Env -> Domain
-cmd (PushN i) _ s = Just ((I i) : s)
-cmd (PushB b) _ s = Just ((B b) : s)
-cmd (PushS str) _ s = Just ((S str) : s)
+cmd (PushT x) _ s = case x of 
+                        (I i) -> Just ((I i) : s)
+                        (B b) -> Just ((B b) : s)
+                        (S s') -> Just ((S s') : s)
+                        (P p) -> Just ((P p) : s)
 cmd (Rot) _ s     = case s of 
                         (x1 : x2 : x3 : xs) -> Just (x3 : x2 : x1 : xs)
                         _        -> Nothing
@@ -102,6 +106,7 @@ cmd (Ref x) env s        = case get x env of
                                  _      -> Nothing
 cmd (WhileLp x) env s      = stmt x s
 
+--EXECUTE LIST OF CMDS
 prog :: Prog -> Env -> Domain
 prog [] e s   = Just s
 prog (c:p) e s = case cmd c e s of 
@@ -109,6 +114,7 @@ prog (c:p) e s = case cmd c e s of
                             _       -> Nothing
 
 
+--NAMING/FUNCTION ENVIRONMENT
 type Env = Var -> Maybe Type
 
 empty :: Env
@@ -120,6 +126,8 @@ get x m = m x
 set :: Var -> Type -> Env -> Env
 set x i m y = if y == x then Just i else m y -- instead of m y could be get y m
 
+
+--WHILE LOOPS
 stmt :: Stmt -> Domain
 stmt (Set e)     s = cmd e empty s
 stmt (While c b)  s = case cmd c empty s of
@@ -138,22 +146,22 @@ stmts (x : xs) s = case stmt x s of
 
 
 nott :: Cmd
-nott = IfThen [PushB False] [PushB True]
+nott = IfThen [PushT (B False)] [PushT (B True)]
 
 
 
 --EXAMPLE OF GOOD PROGRAMS
 
 goodExample1 :: Prog
-goodExample1 = [(WhileLp (Begin [Set (PushN 1900),While (GTE (PushN 10)) (Begin [(Set (PushN 400)), (Set (Sub))])])), PushN 0, Equ, (IfThen [PushS "Leap Year"] [PushS "Non-Leap Year"])]
+goodExample1 = [(WhileLp (Begin [Set (PushT (I 2020)),While (GTE (PushT (I 100))) (Begin [(Set (PushT (I 4))), (Set (Sub))])])), PushT (I 0), Equ, (IfThen [PushT (S "Leap Year")] [PushT (S "Non-Leap Year")])]
 -- THE ABOVE CHECKS WHETHER A GIVEN YEAR IS A LEAP YEAR. REPLACE "1900" WITH THE YEAR YOU WANT TO CHECK
 
 
 --EXAMPLE OF BAD PROGRAMS
 badExample1 :: Prog
-badExample1 = [(PushS "test"), (PushN 5), Add]
+badExample1 = [(PushT (S "test")), (PushT (I 5)), Add]
 
 badExample2 :: Prog
-badExample2 = [PushN 5, Add]
+badExample2 = [PushT (I 5), Add]
 
 

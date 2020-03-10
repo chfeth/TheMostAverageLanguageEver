@@ -29,6 +29,9 @@ data Cmd = PushT Type
          | GTE Cmd
          | Let Var Prog Prog
          | Ref Var
+         | Def Var Prog
+         | Call Var
+         | CallStack
          | IfThen Prog Prog
          | WhileLp Stmt
    deriving (Eq, Show)
@@ -104,14 +107,23 @@ cmd (Let x b v) env s    = case prog b env s of
 cmd (Ref x) env s        = case get x env of
                                  Just i -> Just (i : s)
                                  _      -> Nothing
+cmd (Call x) env s       = case get x env of
+                                 Just (P p) -> prog p env s
+                                 _          -> Nothing
+cmd CallStack env s      = case s of
+                                 ((P p): s') -> prog p env s'
+                                 _          -> Nothing
 cmd (WhileLp x) env s      = stmt x s
 
 --EXECUTE LIST OF CMDS
 prog :: Prog -> Env -> Domain
 prog [] e s   = Just s
-prog (c:p) e s = case cmd c e s of 
-                            Just s' -> prog p e s'
-                            _       -> Nothing
+prog (c:p) e s = case c of 
+                        (Def x y) -> (case set x (P y) e of
+                                          e' -> prog p e' s)
+                        _         -> (case cmd c e s of 
+                                          Just s' -> prog p e s'
+                                          _       -> Nothing)          
 
 
 --NAMING/FUNCTION ENVIRONMENT
@@ -156,6 +168,12 @@ goodExample1 :: Prog
 goodExample1 = [(WhileLp (Begin [Set (PushT (I 2020)),While (GTE (PushT (I 100))) (Begin [(Set (PushT (I 4))), (Set (Sub))])])), PushT (I 0), Equ, (IfThen [PushT (S "Leap Year")] [PushT (S "Non-Leap Year")])]
 -- THE ABOVE CHECKS WHETHER A GIVEN YEAR IS A LEAP YEAR. REPLACE "1900" WITH THE YEAR YOU WANT TO CHECK
 
+funcExample1 :: Prog
+funcExample1 = [Def "Add5Flip" [(PushT (I 5)), Add, (PushT (I (-1))), Mul], (PushT(I (-335))), Call "Add5Flip"]
+-- THE ABOVE DEFINES A FUNCTION THAT ADDS 5 AND FLIPS THE SIGN, THEN PUSHES -335 AND RUNS IT, RESULTING IN 330
+
+funcExample2 :: Prog
+funcExample2 = [(PushT (I 25)), (PushT(P [(PushT (I 5)), Add, (PushT (I (-1))), Mul])), CallStack]
 
 --EXAMPLE OF BAD PROGRAMS
 badExample1 :: Prog
